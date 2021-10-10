@@ -1,0 +1,2 @@
+﻿*.svg -crlf -diff
+*.dwg -crlf -diff

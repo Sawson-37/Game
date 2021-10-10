@@ -1,0 +1,13 @@
+/.stack-work/
+/.cabal-sandbox/
+/dist/
+/timetable/
+/doc/*.html
+/doc/*.docx
+/doc/.database
+/doc/svg/*.pdf
+/drawing/*.pdf
+/system/*.pdf
+*.db
+*.png
+*.dwg
