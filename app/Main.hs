@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
 import qualified SDL as SDL
 import Foreign.Ptr ( castPtr, nullPtr )
@@ -12,7 +13,7 @@ import qualified SDL.Input.Keyboard.Codes as SDL
 import Diagrams.Backend.Cairo as Cairo
 
 -- diagrams
-import Diagrams.Prelude hiding (view)
+import Diagrams.Prelude hiding (view, Vector, (*^), (^+^))
 import Diagrams.TwoD.Text (text)
 
 -- base
@@ -55,186 +56,184 @@ clearValue = fmap (const (Any False))
 -----------------------------
 
 data Model = Model
-    {
-      score :: Int
-    , cursorPos :: Position
-    , orientation :: Orientation
-    , currentTetrmino :: Tetrimino 
-    , piledBlocks :: [Position]
+    { playerPos :: (Double, Double)
+    , velocity :: Vector
     }
 
-type Orientation = Int
-type Position = Complex Double
-
-i :: Position
-i = 0 :+ 1
-
-data Tetrimino -- ラベル
-    = BlockL
-    | BlockJ
-    | BlockT
-    | BlockO 
-    | BlockI
-    | BlockZ 
-    | BlockS
-    deriving (Enum, Show)
+data Playar = Character
 
 
-nextToBlocks :: Tetrimino -> Tetrimino
-nextToBlocks BlockS =  BlockL
-nextToBlocks block  =  succ block
+--　使う関数を下記に定義
+type Vector = (Double, Double)
 
-tetriminoToBlocks :: Tetrimino -> [Position]
-tetriminoToBlocks BlockL =  [0 :+ 0, 0 :+ 1, 0 :+ 2, 1 :+ 0] -- [0 :+ 0, 0 :+ 1, 0 :+ 2, 1 :+ 0] -- 座標
-tetriminoToBlocks BlockJ =  [0 :+ 0, 0 :+ 1, 0 :+ 2,(-1) :+ 0]
-tetriminoToBlocks BlockT =  [0 :+ 0, 0 :+ 1, 1 :+ (-1)]
-tetriminoToBlocks BlockO =  [1 :+ 0, 1 :+ 1, 0 :+ 0, 0 :+ 1]
-tetriminoToBlocks BlockI =  [0 :+ 0, 0 :+ 1, 0 :+ 2, 0 :+ 3]
-tetriminoToBlocks BlockZ =  [1 :+ 0, 1 :+ (-1), 0 :+ 0, 0 :+ 1]
-tetriminoToBlocks BlockS =  [1 :+ 2, 1 :+ 1, 0 :+ 0, 0 :+ 1]
+projectX :: Vector -> Vector
+projectX (x, y) = (x, 0)
 
-reify :: Position -> Orientation -> Tetrimino -> [Position]
-reify pos o block = map (+ pos) $ map rotate $ tetriminoToBlocks block
- where rotate :: Position -> Position
-       rotate c = c * i ^ o
+projectY :: Vector -> Vector
+projectY (x, y) = (0, y)
 
-isColide :: Model -> Bool
-isColide Model{..} = not $ null $ (stage ++ piledBlocks) `intersect` currentBlocks
- where currentBlocks = reify cursorPos orientation currentTetrmino
+gravity :: Vector 
+gravity = (0, -0.1)
+
+leftDash :: Vector 
+leftDash =  (0.5, 0)
+
+rightDash :: Vector 
+rightDash = ( -0.5, 0)
+
+jump :: Vector 
+jump = (0, 0.1)
+
+k :: Double
+k = 0.5
+
+(^+^) :: Vector -> Vector -> Vector
+(x1, y1) ^+^ (x2, y2) = (x1 + x2, y1 + y2)
+
+(^-^) :: Vector -> Vector -> Vector
+(x1, y1) ^-^ (x2, y2) = (x1 - x2, y1 - y2)
+
+nagateV :: Vector -> Vector
+nagateV v =  (-1) *^ v
+
+normV :: Vector -> Double
+normV (x, y) = sqrt (x^2 + y^2)
+
+signorm :: Vector -> Vector
+signorm v = (1 / (normV v)) *^ v
+
+(*^) :: Double -> Vector -> Vector
+a *^ (x, y) = (a * x, a * y)
+
+(^/) :: Vector -> Double -> Vector
+v ^/ a = (1 / a) *^ v
+
+isColideTop :: Position -> Bool
+isColideTop pos = not $ null $ stage `intersect` listPos pos
+ where listPos :: Position -> [(Int, Int)]
+       listPos (x ,y) =  [(ceiling x, ceiling y) ,(floor x, ceiling y)]
 
 
-clearBlock :: [Position] -> [Position]
-clearBlock piledBlocks = concat $ clearBlock' $ toRows piledBlocks
- where clearBlock' :: [[Position]] -> [[Position]]
-       clearBlock' [] = []
-       clearBlock' (r : rows)
-           | length r == 9 = clearBlock' $ map (map (+ negate i)) rows
-           | otherwise = r : clearBlock' rows
-       toRows :: [Position] -> [[Position]]
-       toRows blocks = groupBy isEqualY $ sortOn getY blocks
-         where isEqualY (x1 :+ y1) (x2 :+ y2) = y1 == y2
-               getY (x :+ y) = y
+-- where 
+       
+-- where posX_up player = (ceiling x , y)
+-- vを受け取って、当たり判定をする条件をする範囲を指定する
+
+
+
+isColideGround :: Position -> Bool
+isColideGround pos = not $ null $ stage `intersect` listPos pos
+ where listPos :: Position -> [(Int, Int)]
+       listPos (x ,y) =  [(ceiling x, floor y) ,(floor x, floor y)]
+ 
+
+isColideRight :: Position -> Bool
+isColideRight pos =  not $ null $ stage `intersect` listPos pos
+ where listPos :: Position -> [(Int, Int)]
+       listPos (x ,y) =  [(ceiling x, ceiling y) ,(ceiling x, floor y)]
+
+
+isColideLeft :: Position -> Bool
+isColideLeft pos =  not $ null $ stage `intersect` listPos pos
+ where listPos :: Position -> [(Int, Int)]
+       listPos (x ,y) =  [(floor x, ceiling y) ,(floor x, floor y)]
+ 
 
 
 
 initialModel :: Model
 initialModel = Model
-    { score = 0
-    , cursorPos = initialPos
-    , orientation = 0
-    , currentTetrmino = BlockL 
-    , piledBlocks = []
+    { playerPos = initialPos
+    , velocity  = (0, 0)
     }
 
+type Position = (Double, Double)
 
 initialPos :: Position
-initialPos =  5 :+ 15
+initialPos = (6, 10)
 
 
-stage :: [Position]
+stage :: [(Int, Int)]
 stage = concat
-     [ map (    :+ 0 ) [0 , 1 .. 10]
-     , map (  0 :+   ) [0 , 1 .. 20]
-     , map ( 10 :+   ) [0 , 1 .. 20] 
+     [  map (  , 0) [5 , 6 .. 18]
+      , map ( 5,  ) [1 .. 10] -- 左の壁
+      , map (20,  ) [1 .. 10] -- 右の壁
      ]
 
+mapPair ::(a -> b) -> (a, a) -> (b, b)
+mapPair f (l, r) = (f l, f r) 
 
 view :: Model -> SelectableDiagram
 view Model{..} = scale 20 $ center $ 
-    
     center $ hsep 3
     [ value [] $ center $ mconcat $ map drawOneBlock $ concat
-        [currentBlocks 
-        , stage 
-        , piledBlocks
+        [ [playerPos] 
+        , map (mapPair fromIntegral) stage 
         ]
-    , buttons
     ]
-   where currentBlocks :: [Position] --　viewに対してだけ定義している。関数定義の順番は関係ない
-         currentBlocks = reify cursorPos orientation currentTetrmino
-         drawOneBlock :: Position -> NormalDiagram       
-         drawOneBlock ( x :+ y ) =  translate (V2 x y) r -- 一個のブロックを作成中
-         buttons :: SelectableDiagram
-         buttons = center $ vsep 0.5
-             [ r # value ["up"]
-             , center $ hsep 0.5
-                 [ r # value ["left"]
-                 , r # value ["down"]
-                 , r # value ["right"]
-                 ] 
-             ]
-         r = rect 0.8 0.8
-         -- scoreBox :: NormalDiagram
-         -- scoreBox = textshow score (rect 5 1 :: NormalDiagram) 
-         -- mconcat [ text "abc" ,phantom (rect 3 1 :: NormalDiagram)]
+    where drawOneBlock :: (Double, Double) -> NormalDiagram       
+          drawOneBlock ( x , y ) =  translate (V2 x y) r -- 一個のブロックを作成中
+          r = rect 0.8 0.8
 
+updateWithTimer :: Model -> Model
+updateWithTimer model = Model (shiftTop $ shiftDown $ shiftLeft $ shiftRight $  playerPos') velocity'
+ where (vx, vy) = velocity model
+       velocity' :: Vector
+       velocity' = undefined
+       shiftTop :: Position -> Position
+       shiftTop
+           | isColideTop playerPos'= floorY
+           | otherwise = id
+       shiftDown :: Position -> Position
+       shiftDown
+           | isColideGround playerPos'= ceilingY
+           | otherwise = id
+       shiftLeft :: Position -> Position
+       shiftLeft
+           | isColideLeft playerPos'= floorX
+           | otherwise = id
+       shiftRight :: Position -> Position
+       shiftRight
+           | isColideRight playerPos'= ceilingX
+           | otherwise = id
+       floorY :: Position -> Position
+       floorY = undefined
+       ceilingY :: Position -> Position
+       ceilingY = undefined
+       floorX :: Position -> Position
+       floorX = undefined
+       ceilingX :: Position -> Position
+       ceilingX = undefined
+       playerPos' = playerPos model ^+^ velocity model
+
+       newVelocity :: Vector -> Vector
+       newVelocity = undefined
+
+
+
+updateWithKeyPress :: SDL.Keycode -> Model -> Model
+-- updateWithKeyPress SDL.KeycodeRight =  updateWithClick "right"
+-- updateWithKeyPress SDL.KeycodeLeft =  updateWithClick "left"
+updateWithKeyPress _ = id
 
 
 updateWithClick :: String -> Model -> Model
-updateWithClick "left" model
-    | isColide model' = model
-    | otherwise      = model'
- where currentBlocks :: [Position] --　viewに対してだけ定義している。関数定義の順番は関係ない
-       currentBlocks = reify (cursorPos model) (orientation model) (currentTetrmino model)
-       model'     = Model (score model) cursorPos' (orientation model) (currentTetrmino model) (piledBlocks model)
-       cursorPos' = x' :+ y
-       y          = imagPart (cursorPos model)
-       x'         = realPart (cursorPos model) - 1 
+updateWithClick _ model = undefined
+    
+--     | isColide model  = model
+--     | otherwise       = model -- '
+--  where model'     = Model playerPos' (velocity model)
+--        playerPos' = [(x', y)]
+--        y  = snd( playerPos model) 
+--        x' = fst( playerPos model) + 1 
 
-updateWithClick "right" model
-    | isColide model' = model
-    | otherwise      = model'
- where model'     = Model (score model) cursorPos' (orientation model) (currentTetrmino model) (piledBlocks model)
-       cursorPos' = x' :+ y
-       y          = imagPart (cursorPos model)
-       x'         = realPart (cursorPos model) + 1 
+-- currentBlocks :: [Position] --　viewに対してだけ定義している。関数定義の順番は関係ない
+--        currentBlocks = reify (cursorPos model) (orientation model) (currentTetrmino model)
+--        model'     = Model (score model) cursorPos' (orientation model) (currentTetrmino model) (piledBlocks model)
+--        cursorPos' = x' :+ y
+--        y          = imagPart (cursorPos model)
+--        x'         = realPart (cursorPos model) - 1 
 
-updateWithClick "down" model
-    | isColide model' = Model
-        { score          = 0
-        , cursorPos       = initialPos
-        , orientation     = 0
-        , currentTetrmino = nextToBlocks $ currentTetrmino model
-        , piledBlocks     = clearBlock $ piledBlocks model  ++ currentBlocks
-        }
-    | otherwise      = model'
- where currentBlocks :: [Position] --　viewに対してだけ定義している。関数定義の順番は関係ない
-       currentBlocks = reify (cursorPos model) (orientation model) (currentTetrmino model)
-       model'     = Model (score model) cursorPos' (orientation model) (currentTetrmino model) (piledBlocks model)       
-       cursorPos' = x :+ y'
-       y'          = imagPart (cursorPos model) - 1
-       x         = realPart (cursorPos model)
-
-
-updateWithClick "up" model
-    | isColide model' = model
-    | otherwise      = model'
- where model'     = Model (score model) (cursorPos model) orientation' (currentTetrmino model) (piledBlocks model)
-       orientation' = (orientation model + 1) `mod` 4
-
-updateWithClick _ model           = model
-
-updateWithTimer :: Model -> Model
-updateWithTimer model
-    | isColide model' = Model
-        { score           = 0
-        , cursorPos       = initialPos
-        , orientation     = 0
-        , currentTetrmino = nextToBlocks $ currentTetrmino model
-        , piledBlocks     = clearBlock $ piledBlocks model  ++ currentBlocks
-        }
-    | otherwise      = model'
- where currentBlocks :: [Position] --　viewに対してだけ定義している。関数定義の順番は関係ない
-       currentBlocks = reify (cursorPos model) (orientation model) (currentTetrmino model)
-       model'     = Model (score model) cursorPos' (orientation model) (currentTetrmino model) (piledBlocks model)       
-       cursorPos' = x :+ y'
-       y'          = imagPart (cursorPos model) - 1
-       x         = realPart (cursorPos model)
-
-updateWithKeyPress :: SDL.Keycode -> Model -> Model
-updateWithKeyPress SDL.KeycodeRight =  updateWithClick "right"
-updateWithKeyPress SDL.KeycodeLeft =  updateWithClick "right"
-updateWithKeyPress _ = id
 -----------------------------
 
 fullHDRect :: NormalDiagram
@@ -276,7 +275,7 @@ main = do
 
     -- 定周期の処理
     _ <- SDL.addTimer 1000 $ const $ do
-        modifyMVarPure_ vModel $ updateWithTimer
+--        modifyMVarPure_ vModel-- $ updateWithTimer
         pushCustomEvent CustomExposeEvent
         return $ SDL.Reschedule 1000
 
@@ -315,7 +314,7 @@ main = do
                         _           -> loop
                 SDL.KeyboardEvent SDL.KeyboardEventData{..} | keyboardEventKeyMotion == SDL.Pressed -> do
                     let SDL.Keysym _ key SDL.KeyModifier{..} = keyboardEventKeysym
-                    modifyMVarPure_ vModel $ updateWithKeyPress key
+                    modifyMVarPure_ vModel  $ updateWithKeyPress key
                     pushCustomEvent CustomExposeEvent
                     loop
                 SDL.QuitEvent       -> return ()
