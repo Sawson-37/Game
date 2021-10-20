@@ -13,7 +13,7 @@ import qualified SDL.Input.Keyboard.Codes as SDL
 import Diagrams.Backend.Cairo as Cairo
 
 -- diagrams
-import Diagrams.Prelude hiding (view, Vector, (*^), (^+^))
+import Diagrams.Prelude hiding (view, Vector, (*^), (^+^), (^-^),signorm)
 import Diagrams.TwoD.Text (text)
 
 -- base
@@ -53,7 +53,9 @@ resetValue = fmap toAny
 clearValue :: QDiagram v n m -> QDiagram v n Any
 clearValue = fmap (const (Any False))
 
+
 -----------------------------
+
 
 data Model = Model
     { playerPos :: (Double, Double)
@@ -73,19 +75,22 @@ projectY :: Vector -> Vector
 projectY (x, y) = (0, y)
 
 gravity :: Vector 
-gravity = (0, -0.1)
+gravity = (0, -0.01)
 
 leftDash :: Vector 
-leftDash =  (0.5, 0)
+leftDash = ( -0.2, 0)
 
 rightDash :: Vector 
-rightDash = ( -0.5, 0)
+rightDash = (0.2, 0)
 
 jump :: Vector 
-jump = (0, 0.1)
+jump = (0, 0.9)
 
 k :: Double
 k = 0.5
+
+vMax :: Double
+vMax = 0.99
 
 (^+^) :: Vector -> Vector -> Vector
 (x1, y1) ^+^ (x2, y2) = (x1 + x2, y1 + y2)
@@ -121,8 +126,8 @@ isColideTop pos = not $ null $ stage `intersect` listPos pos
 
 
 
-isColideGround :: Position -> Bool
-isColideGround pos = not $ null $ stage `intersect` listPos pos
+isColideBottom :: Position -> Bool
+isColideBottom pos = not $ null $ stage `intersect` listPos pos
  where listPos :: Position -> [(Int, Int)]
        listPos (x ,y) =  [(ceiling x, floor y) ,(floor x, floor y)]
  
@@ -137,9 +142,13 @@ isColideLeft :: Position -> Bool
 isColideLeft pos =  not $ null $ stage `intersect` listPos pos
  where listPos :: Position -> [(Int, Int)]
        listPos (x ,y) =  [(floor x, ceiling y) ,(floor x, floor y)]
- 
 
 
+isGrounded :: Position -> Bool
+isGrounded pos = not $ null $ stage' `intersect` listPos pos
+ where listPos :: Position -> [(Int, Double)]
+       listPos (x ,y) =  [(ceiling x, y - 1), (floor x, y - 1)]
+       stage' = map (\ (x, y) -> (x ,fromIntegral y)) stage
 
 initialModel :: Model
 initialModel = Model
@@ -175,51 +184,87 @@ view Model{..} = scale 20 $ center $
           drawOneBlock ( x , y ) =  translate (V2 x y) r -- ˆêŒÂ‚ÌƒuƒƒbƒN‚ğì¬’†
           r = rect 0.8 0.8
 
-updateWithTimer :: Model -> Model
-updateWithTimer model = Model (shiftTop $ shiftDown $ shiftLeft $ shiftRight $  playerPos') velocity'
+updateWithTimer :: (SDL.Scancode -> Bool) -> Model -> Model
+updateWithTimer isPressed  model = Model (shiftTop $ shiftDown $ shiftLeft $ shiftRight $  playerPos') velocity'
  where (vx, vy) = velocity model
        velocity' :: Vector
-       velocity' = undefined
+       velocity' = roundY $ roundX $ roundVelocity $ velocity model ^+^ vL ^+^ vR ^+^ vG
+       
+       vL :: Vector
+       vL
+           | isLeftPressed && isGrounded (playerPos model)  = leftDash
+           | otherwise                                      = (0, 0)
+       vR :: Vector
+       vR
+           | isRightPressed && isGrounded (playerPos model) = rightDash
+           | otherwise                                      = (0, 0)
+       vG :: Vector
+       vG
+           | not $ isGrounded (playerPos model)             = gravity
+           | otherwise                                      = (0, 0)
+       roundVelocity :: Vector -> Vector
+       roundVelocity v
+           | normV v <= vMax                                = v
+           | otherwise                                      = vMax *^ signorm v
+       roundX :: Vector -> Vector
+       roundX (x, y)
+           | isColideLeft playerPos' || isColideRight playerPos' = (0, y)
+           | otherwise                                           = (x, y)
+       roundY :: Vector -> Vector
+       roundY (x, y)
+           | isColideTop playerPos' || isColideBottom playerPos' = (x, 0)
+           | otherwise                                           = (x, y)
+       
+       
+       isLeftPressed :: Bool
+       isLeftPressed  = isPressed SDL.ScancodeLeft
+       isRightPressed :: Bool
+       isRightPressed = isPressed SDL.ScancodeRight
+--        apllyWhen :: Bool -> (Double, Double) -> (Double, Double) -> (Double, Double)
+--        apllyWhen
+
        shiftTop :: Position -> Position
        shiftTop
-           | isColideTop playerPos'= floorY
+           | isColideTop playerPos' = floorY 
            | otherwise = id
        shiftDown :: Position -> Position
        shiftDown
-           | isColideGround playerPos'= ceilingY
+           | isColideBottom playerPos'= ceilingY
            | otherwise = id
        shiftLeft :: Position -> Position
        shiftLeft
-           | isColideLeft playerPos'= floorX
-           | otherwise = id
+           | isColideLeft playerPos'= ceilingX
+
+
+| otherwise = id
        shiftRight :: Position -> Position
        shiftRight
-           | isColideRight playerPos'= ceilingX
+           | isColideRight playerPos'= floorX
            | otherwise = id
        floorY :: Position -> Position
-       floorY = undefined
+       floorY (x, y) = (x, fromIntegral $ floor y)       
        ceilingY :: Position -> Position
-       ceilingY = undefined
+       ceilingY (x, y) = (x, fromIntegral $ ceiling y)
        floorX :: Position -> Position
-       floorX = undefined
+       floorX (x, y) = (fromIntegral $ floor x, y)
        ceilingX :: Position -> Position
-       ceilingX = undefined
+       ceilingX (x, y) = (fromIntegral $ ceiling x, y)
+       
        playerPos' = playerPos model ^+^ velocity model
 
-       newVelocity :: Vector -> Vector
-       newVelocity = undefined
-
+            
 
 
 updateWithKeyPress :: SDL.Keycode -> Model -> Model
--- updateWithKeyPress SDL.KeycodeRight =  updateWithClick "right"
--- updateWithKeyPress SDL.KeycodeLeft =  updateWithClick "left"
-updateWithKeyPress _ = id
+-- updateWithKeyPress SDL.KeycodeRight =  SDL.KeycodeRight
+updateWithKeyPress SDL.KeycodeUp model
+    | isGrounded $  playerPos model = Model(playerPos model)(velocity model ^+^ jump)
+    | otherwise = model
+updateWithKeyPress _ model = model
 
 
 updateWithClick :: String -> Model -> Model
-updateWithClick _ model = undefined
-    
+updateWithClick _ model = model
 --     | isColide model  = model
 --     | otherwise       = model -- '
 --  where model'     = Model playerPos' (velocity model)
@@ -274,10 +319,12 @@ main = do
             Just regEventType -> SDL.getRegisteredEvent regEventType event
 
     -- ’èüŠú‚Ìˆ—
-    _ <- SDL.addTimer 1000 $ const $ do
---        modifyMVarPure_ vModel-- $ updateWithTimer
+    _ <- SDL.addTimer 100 $ const $ do
+--        
+        isPressed <- SDL.getKeyboardState
+        modifyMVarPure_ vModel $ updateWithTimer isPressed
         pushCustomEvent CustomExposeEvent
-        return $ SDL.Reschedule 1000
+        return $ SDL.Reschedule 100
 
     pushCustomEvent CustomExposeEvent
     
